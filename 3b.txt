@@ -1,0 +1,128 @@
+/*
+Inputs:
+1) a sequence of integers "as",
+2) a sequence "peas" such that peas[j] is a sequence of as[j] numbers of some field N, such that
+	||peas[j]|| is independent of j,
+3) a sequence "peb" of numbers of N, which should be cbs[b][1][i] for some b and i,
+4) a part of the compatibility bookshelf "cbspart", which should be cbs[b][2][i] for the same b and i.
+Output:
+if there exists a scalar lambda such that for all j there exists some graph in the compatibility
+bookshelf with Perron eigenvector peas[j] cat lambda*peb, then this function returns lambda (note:
+this does not depend on j or the graph, since lambda||peb||=||peas[j]|| should hold for all j), as
+well as the sequence indexed by the same j of sets of graphs satisfying this requirement.
+If there exists a j with no suitable graphs from the compatibility bookshelf, then it returns
+0 and the empty sequence.
+*/
+CompatibleSetsGivenPeb := function(as,peas,peb,cbspart)
+	tchi:=#as;
+	bipartiteparts:=[];
+	for j:=1 to tchi do
+		aj:=as[j];
+		pesaj:=cbspart[aj][1];
+		isviable:=false;
+		for k:=1 to #pesaj do
+			peaj:=pesaj[k];
+			lambda,scaledpea:=AreCompatible(peaj,peas[j]);
+			if lambda ne 0 then
+				permuting:=FindPermutation(scaledpea,peaj) cat [(aj+1)..(aj+#peb)];
+				graphs:=[NewOrder(G,permuting): G in cbspart[aj][2][k]];
+				isviable:=true;
+				break k;
+			end if;
+		end for;
+		if not isviable then
+			return 0,[];
+		end if;
+		Append(~bipartiteparts,graphs);
+	end for;
+	return lambda,bipartiteparts;
+end function;
+
+/*
+Inputs:
+1) a compatibility bookshelf "cbs",
+2) a sequence of integers "as",
+3) an integer "b" at least as big as the members of as,
+4) a sequence "peas" such that peas[j] is a sequence of as[j] numbers of some field N.
+Outputs:
+1) The sequence "bps" of sequences of sets of graphs, and
+2) The sequence "pesb" of sequences of length b of numbers of N,
+such that for all appropriate indices i and j we have
+i) The graphs in bps[i][j] have bipartite classes of size as[j] and b,
+ii) The graphs in bps[i][j] have Perron eigenvector peas[j] cat pesb[i],
+iii) bps[i][j] consists of all graphs that satisfy the requirements, and bps[i][j] is nonempty.
+*/
+CompatibleSetsInductiveStep := function(cbs,as,b,peas)
+	tchi:=#as;
+	pesb:=[];
+	bps:=[];
+	for i:=1 to #cbs[b][1] do
+		peb:=cbs[b][1][i];
+		cbspart:=cbs[b][2][i];
+		lambda, bpsi:=CompatibleSetsGivenPeb(as,peas,peb,cbspart);
+		if lambda ne 0 then
+			Append(~pesb,[lambda*n: n in peb]);
+			Append(~bps,bpsi);
+		end if;
+	end for;
+	return bps,pesb;
+end function;
+
+/*
+Inputs:
+1) a compatibility bookshelf "cbs",
+2) an integer a,
+3) an integer b at least a.
+Outputs:
+A sequence "css" containing all lists [* graphs, pes *] such that graphs[2][1] is the set of bipartite
+graphs from the bookshelf on a+b vertices with the first a vertices being an independent set, the last
+b vertices being an independent set, such that the Perron eigenvector is pes[1] cat pes[2].
+*/
+CompatibleSetsInductiveBasis := function(cbs,a,b)
+	css:=[];
+	for i:=1 to #cbs[b][1] do
+		peb:=cbs[b][1][i];
+		cbspart:=cbs[b][2][i];
+		indicestorunover:=[1..#cbspart[a][1]];
+		if a eq b then
+			cbsbm:=[Multiset(s): s in cbs[b][1]];
+			indicestorunover:=[j : j in [1..#cbspart[a][1]] | 
+			Index(cbsbm,Multiset(cbspart[a][1][j])) ge i];
+		end if;
+		for j in indicestorunover do
+			pea:=cbspart[a][1][j];
+			pes:=[pea,peb];
+			graphs:=[];
+			graphs[2]:=[Setseq(cbspart[a][2][j])];
+			Append(~css,[*graphs,pes*]);
+		end for;
+	end for;
+	return css;
+end function;
+
+/*
+Inputs:
+1) a non-decreasing partition "partn",
+2) a compatibility bookshelf "cbs".
+Output
+A sequence "css" containing all of the compatible sets, where a compatible set is a list
+[* graphs, pes *] such that for i<j graphs[j][i] is a set of bipartite graphs on
+partn[i]+partn[j] vertices such that the first partn[i] vertices form an independent set and the last
+partn[j] vertices form an independent set, and such that the Perron eigenvector is pes[i] cat pes[j].
+*/
+CompatibleSets := function(partn,cbs)
+	if #partn eq 2 then
+		return CompatibleSetsInductiveBasis(cbs,partn[1],partn[2]);
+	end if;
+	as:=Prune(partn);
+	b:=partn[#partn];
+	smaller:=$$(as,cbs);
+	css:=[];
+	for lis in smaller do
+		bps,pesb:=CompatibleSetsInductiveStep(cbs,as,b,lis[2]);
+		for i:=1 to #bps do
+			Append(~css,[*Append(lis[1],bps[i]),Append(lis[2],pesb[i])*]);
+		end for;
+	end for;
+	return css;
+end function;

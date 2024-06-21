@@ -1,0 +1,74 @@
+/*
+The following function aims to compute, given an integer partition if it is viable for a
+Hoffman colorable graph, excluding cone graphs and 2-5-graphs because they are handled
+separately. Specifically, it returns "false" under the following conditions:
+1) 1 is in the partition,
+2) 2 is twice in the partition,
+3) 2 and 3 are both in the partition,
+4) 2 or 3 is in the partition, and 4 is twice in the partition,
+5) 5 is in the partition, and 3 is thrice in the partition,
+6) the partition contains three distinct integers adding to at most 14.
+
+All other cases possibly give Hoffman colorings so are returned "true".
+*/
+PartitionIsViable := function(partn)
+	pruned:=Prune(partn);
+	if 1 in partn then
+		return false;
+	end if;
+	s:=Set(partn);
+	t:=#(s meet {2,3});
+	if t eq 2 then
+		return false;
+	elif t eq 1 then
+		if 4 in s then
+			if 4 in Exclude(partn,4) then
+				return false;
+			end if;
+		end if;
+		if 2 in s then
+			if 2 in pruned then
+				return false;
+			end if;
+		else
+			if 3 in pruned and 3 in Prune(pruned) and 5 in s then
+				return false;
+			end if;
+		end if;
+	end if;
+	if #s gt 2 then
+		min1:=Minimum(s);
+		Exclude(~s,min1);
+		min2:=Minimum(s);
+		Exclude(~s,min2);
+		if min1+min2+Minimum(s) lt 15 then
+			return false;
+		end if;
+	end if;
+	return true;
+end function;
+
+// The following function computes all integer partitions partn of n in chi parts that satisfy the
+// previous function.
+ViablePartitions := function(n,chi)
+	partns:=[];
+	for partn in Partitions(n,chi) do
+		if PartitionIsViable(partn) then
+			Append(~partns,partn);
+		end if;
+	end for;
+	return partns;
+end function;
+
+// Given a sequence of partitions, this function returns the maximum of partn[1]+partn[2] over
+// partn in partns. This is the maximum size of bipartite part we need to generate.
+LargestBipartitePart := function(partns)
+	maximum:=1;
+	for partn in partns do
+		size:=partn[1]+partn[2];
+		if size gt maximum then
+			maximum:=size;
+		end if;
+	end for;
+	return maximum;
+end function;

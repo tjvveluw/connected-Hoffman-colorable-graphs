@@ -1,0 +1,117 @@
+load "0.txt";
+load "1a.txt";
+load "1b.txt";
+load "2a.txt";
+load "2b.txt";
+load "3a.txt";
+load "3b.txt";
+load "4.txt";
+load "TwoFiveGraphs.txt";
+
+
+/*
+This function computes all the connected Hoffman colorable graphs given a number of vertices n
+and a chromatic number chi. Optional parameters are R and prec to adjust the precision of
+Newton's method.
+
+The function gives two outputs:
+1) A sequence containing all the Hoffman colorable graphs with the property that all bipartite
+	parts are connected.
+2) The problems involving disconnected bipartite parts. For every unsolved problem, four pieces
+	of information are put together in a list:
+	1) The minimal polynomial of the largest eigenvalues of the bipartite parts in question,
+	2) A sequence containing all the problematic integer partitions of n,
+	3) The compatibility bookshelf where the connected bipartite parts are stored, sorted by
+		Perron eigenvector.
+	4) A sequence "disc" of sequences of sets of graphs, such that disc[b][a] contains all the
+		disconnected bipartite parts with class sizes a and b.
+*/
+
+/*
+This function executes the above with partitions and bipartite parts as input.
+*/
+
+AllHoffmanColorablesGivenPartitionsAndParts := function(n,chi,viabpartns,viabpairs,graphsizes,viabps : R:=PolynomialRing(RealField()), prec:=10)
+	t1:=Cputime();
+	hc := AllTwoFiveGraphs(n,chi);
+	t2:=Cputime();
+	disconnectedproblems:=[];
+	if #viabpartns eq 0 then
+		return hc, [],t2-t1,0,0;
+	end if;
+	presentclasssizes:=&join[Seqset(partn): partn in viabpartns];
+	lbeval:=LibraryOfBipartiteEigenvalues(viabpairs,graphsizes,viabps,R,prec);
+	slib:=SizesLibrary(lbeval,presentclasssizes);
+	t3:=Cputime();
+	for d:=1 to #lbeval do
+		for id:=1 to #lbeval[d][1] do
+			f:=lbeval[d][1][id];
+			bookshelf:=lbeval[d][2][id];
+			sizesbookshelf:=slib[d][id];
+			partns:=PartitionsToConsider(viabpartns,bookshelf,sizesbookshelf,chi);
+			if #partns gt 0 then
+				pairs:=PairsFromPartitions(partns,chi);
+				cbs,disc,psed,psud:=CompatBookshelf(bookshelf,f,pairs);
+				cpartns:=ConnectedCases(partns,psud);
+				dpartns:=DisconnectedCases(partns,psed);
+				for partn in cpartns do
+					compsets:=CompatibleSets(Reverse(partn),cbs);
+					for lis in compsets do
+						hc cat:= Compose(lis[1],Reverse(partn),lis[2] : hoffman:=f, R:=R, prec:=prec);
+					end for;
+				end for;
+				if #dpartns gt 0 then
+					Append(~disconnectedproblems,[*f,dpartns,cbs,disc*]);
+				end if;
+			end if;
+		end for;
+	end for;
+	return hc, disconnectedproblems,t2-t1,t3-t2,Cputime(t3);
+end function;
+
+/*
+This function computes all regular Hoffman colorable graphs (connected or not).
+We take a sequence of regular bpiartite parts as input. We need this function for
+the cone graphs.
+*/
+
+AllRegularHoffmanColorablesGivenParts := function(n,chi,m,nu,viabps : R:=PolynomialRing(RealField()),prec:=10)
+	P<x>:=PolynomialRing(Integers());
+	f:=x-nu;
+	as:=[m: i in [1..chi]];
+	peas:=[[1: j in [1..m]]: i in [1..chi]];
+	bipartiteparts:=[];
+	for j:=2 to chi do
+		bipartiteparts[j]:=[];
+		for i:=1 to j-1 do
+			bipartiteparts[j][i]:=viabps;
+		end for;
+	end for;
+	return Compose(bipartiteparts,as,peas : hoffman:=f, R:=R, prec:=prec);
+end function;
+
+/*
+This is the actual function.
+It first generates all relevant bipartite parts, it then checks for cone graphs,
+and lastly invokes the first function of this file. The different steps are timed
+and outputted.
+*/
+
+AllHoffmanColorables := function(n,chi : R:=PolynomialRing(RealField()), prec:=10)
+	t1:=Cputime();
+	viabpartns:=ViablePartitions(n,chi);
+	viabpairs:=PairsFromPartitions(viabpartns,chi);
+	grsz:={p[1]+p[2]: p in viabpairs};
+	viabgs:=ViableBipartiteGraphsMultiple(grsz);
+	t2:=Cputime();
+	nu:=IsConeViable(n,chi);
+	hc:=[];
+	if nu gt 0 then
+		m:=nu^2;
+		viabrps:=PickAndReorderRegularOnes(m,nu,ViableBipartiteGraphs(2*m));
+		hc:=[ConeGraph(G): G in AllRegularHoffmanColorablesGivenParts(n-1,chi-1,m,nu,viabrps)];
+	end if;
+	tcones:=Cputime(t2);
+	hcmore,disc,ttf,tlbeval,tcompose:=AllHoffmanColorablesGivenPartitionsAndParts(n,chi,viabpartns,viabpairs,grsz,viabgs : R:=R, prec:=prec);
+	return hc cat hcmore, disc, t2-t1,tcones, ttf, tlbeval, tcompose;
+end function;

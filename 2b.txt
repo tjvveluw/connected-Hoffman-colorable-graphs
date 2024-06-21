@@ -1,0 +1,96 @@
+/*
+Compatibility Bookshelf:
+Inputs:
+1) a bookshelf of the form lib[d][2][i] for some d and i,
+2) the corresponding irreducible polynomial f=lib[d][1][i],
+3) a set of pairs {[a,b]} that should be considered.
+Outputs:
+1) a sequence cbs such that for all [a,b] in pairs cbs[b] is a list [*pesb,bps*],
+	where pesb is a sequence of sequences of size b of elements of Q[x]/(f).
+	The structure of bps is as follows:
+	bps[ib][a] is a list [*pesa,gr*] such that pesa is a sequence of sequences of size a
+	of elements of Q[x]/(f),
+	and gr[ia] is the set of connected graphs from bookshelf[b][a] that have Perron eigenvector
+	equal to pesa[ia] cat pesb[ib]. We have to reorder and rescale the graphs from bookshelf[b][a]
+	and their vectors to have #pesb and #pesa as small as possible.
+2) a sequence disc such that for all [a,b] in pairs disc[b][a] is the set of disconnected graphs from
+	bookshelf[b][a].
+3) a set "pairs_exist_disc" containing the pairs [a,b] such that disc[b][a] is nonempty.
+4) a set "pairs_univ_disc" containing the pairs [a,b] for which cbs[b] contains no graphs with smaller
+	class a.
+
+
+The following procedure adds graph G, which is assumed to have class a on vertices 1..a and class b on
+vertices a+1..a+b, to the compatibility library given the structure above. pe should be the Perron
+eigenvector of G.
+*/
+procedure AddToCompatBookshelf(~cbs,G,pe,a,b,max_a)
+	newpea:=[pe[i]: i in [1..a]];
+	newpeb:=[pe[a+i]: i in [1..b]];
+	tosortb:=true;
+	pesb:=cbs[b][1];
+	ib:=1;
+	while ib le #pesb and tosortb do
+		oldpeb:=pesb[ib];
+		lambda,scaledpeb:=AreCompatible(oldpeb,newpeb);
+		if lambda ne 0 then
+			tosortb:=false;
+			scaledpea:=[lambda*entrya: entrya in newpea];
+			permb:=[a+j: j in FindPermutation(oldpeb,scaledpeb)];
+			tosorta:=true;
+			pesa:=cbs[b][2][ib][a][1];
+			ia:=1;
+			while ia le #pesa and tosorta do
+				oldpea:=pesa[ia];
+				if Multiset(oldpea) eq Multiset(scaledpea) then
+					tosorta:=false;
+					perma:=FindPermutation(oldpea,scaledpea);
+					Include(~cbs[b][2][ib][a][2][ia],NewOrder(G,perma cat permb));
+				end if;
+				ia+:=1;
+			end while;
+			if tosorta then
+				cbs[b][2][ib][a][1][ia]:=scaledpea;
+				cbs[b][2][ib][a][2][ia]:={NewOrder(G,[1..a] cat permb)};
+			end if;
+		end if;
+		ib+:=1;
+	end while;
+	if tosortb then
+		cbs[b][1][ib]:=newpeb;
+		cbs[b][2][ib]:=[[*[],[]*]: aa in [1..max_a]];
+		cbs[b][2][ib][a]:=[*[newpea],[{G}]*];
+	end if;
+end procedure;
+
+CompatBookshelf := function(bookshelf,f,pairs)
+	N<nu>:=NumberField(f: DoLinearExtension:=true);
+	max_b:=Maximum({pair[2]: pair in pairs});
+	max_a:=Maximum({pair[1]: pair in pairs});
+	cbs:=[[*[],[] *]: i in [1..max_b]];
+	disc:=[[[]: j in [1..max_a]]: i in [1..max_b]];
+	pairs_exist_disc:={};
+	pairs_univ_disc:={};
+	for pair in pairs do
+		b:=pair[2];	
+		a:=pair[1];
+		existsconn:=false;
+		for lis in bookshelf[b][a] do
+			conn:=lis[2];
+			G:=lis[1];
+			if conn then
+				existsconn:=true;
+				pe:=Basis(Nullspace(AdjacencyMatrix(G)-ScalarMatrix(a+b,nu)))[1];
+				pe /:=pe[a+1];
+				AddToCompatBookshelf(~cbs,G,pe,a,b,max_a);
+			else
+				Append(~disc[b][a],G);
+				Include(~pairs_exist_disc,[a,b]);
+			end if;
+		end for;
+		if not existsconn then
+			Include(~pairs_univ_disc,[a,b]);
+		end if;
+	end for;
+	return cbs,disc,pairs_exist_disc,pairs_univ_disc;
+end function;

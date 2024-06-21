@@ -1,0 +1,144 @@
+/*
+This function computes one of two transversals.
+
+Inputs: a graph "G", a natural number "a"
+such that {1,...,a} forms a bipartite class of G, and a sequence of length a "pea".
+Optional input: another sequence peb, of the same type as pea.
+
+Output: some transversal:
+
+- If peb is not given, then a transversal S/H is given, where S is the group of
+	permutations s such that pea[i]=pea[s(i)] for all i, and H is the group
+	of restrictions to {1,...,a} of the bipartition-preserving automorphisms
+	of G.
+- If peb is given, then a transversal S/H is given, such that S is the group of
+	permutations s such that
+	1) if 1<=i<=a, then 1<=s(i)<=a,
+	2) for all 1<=i<=a we have pea[i]=pea[s(i)],
+	3) for all i>a we have peb[a-i]=peb[a-s(i)].
+	The group H is the group of bipartition-preserving automorphisms of G.
+
+These transversals contain (up to isomorphism) every way of identifying vertices
+with the same value in pea.
+*/
+
+PastingPermutationsUpToEquivalence := function(G,a,pea : peb:=[])
+	equi:=FixingAutomorphismGroup(G,a);
+	if #peb gt 0 then
+		biggp:=DirectProduct(FixingPermutationGroup(pea),FixingPermutationGroup(peb));
+	else
+		biggp:=FixingPermutationGroup(pea);
+		genims:=[];
+		for phi in GeneratorsSequence(equi) do
+			Append(~genims,biggp ! Eltseq(phi)[[1..a]]);
+		end for;
+		h:=hom<equi->biggp | genims >;
+		equi:=Image(h);
+	end if;
+	return [Eltseq(tt): tt in Transversal(biggp,equi)];
+end function;
+
+/*
+Inputs:
+1) a sequence "templates" of template graphs,
+2) a sequence of sequences of bipartite parts
+3) a sequence "as" of the same length as input 2 such that
+	i) the first as[i] vertices form an independent set in the graphs in bipartiteparts[i],
+	ii) the first as[1] vertices of all templates form an independent set, as do the next as[2]
+		vertices, as do the next as[3], et cetera.
+4) an integer b such that for all the graphs G in bipartiteparts[i]:
+	i) G has as[i]+b vertices,
+	ii) the last b vertices of G form an independent set.
+5) a sequence "peas" of sequences of numbers of some field N, such that
+	i) &cat peas is a positive eigenvector of every template graph,
+	ii) peas[i] is a sequence of as[i] numbers.
+6) a sequence "peb" of numbers of N of length b such that peas[i] cat peb is a positive eigenvector
+	of bipartiteparts[i].
+Outputs:
+Up to isomorphism, all the graphs G such that
+i) &cat peas cat peb forms a positive eigenvector of G,
+ii) the first as[1] vertices form an independent set, the next a[2] form an independent set, et cetera
+	and the last b vertices form an independent set.
+iii) the induced subgraph of G on independent set i and the last independent set is in bipartitegraphs[i],
+iv) the induced subgraph of G on the complement of the last independent set is one of the
+	template graphs.
+*/
+ComposeInductiveStep := function (templates,bipartiteparts,as,b,peas,peb)
+	tchi:=#as;
+	pastingperms :=[[PastingPermutationsUpToEquivalence(G,as[i],peas[i] : peb:=peb): G in bipartiteparts[i]] : i in [1..tchi-1]];
+	Append(~pastingperms,[[perm cat [as[tchi]+1..as[tchi]+b]: perm in PastingPermutationsUpToEquivalence(G,as[tchi],peas[tchi])]: G in bipartiteparts[tchi]]);
+	shiftas:=[0] cat [&+(as[[1..i]]): i in [1..(tchi-1)]];
+	shiftb:=&+as;
+	shiftexc:=[shiftb-a: a in as];
+	graphs:=[];
+	canonicallylabeled:=[];
+	bipartitepartsindicescart:=CartesianProduct([[1..#bp]: bp in bipartiteparts]);
+	for template in templates do
+		for indexchoice in bipartitepartsindicescart do
+			bps:=[bipartiteparts[i][indexchoice[i]]: i in [1..tchi]];
+			pps :=[pastingperms[i][indexchoice[i]]: i in [1..tchi]];
+			for pastingchoice in CartesianProduct(pps) do
+				newgraph:=template+b;
+				for i:=1 to tchi do
+					for e in Edges(bps[i]) do
+						indices:={Index(v): v in EndVertices(e)};
+						ai:=Minimum(indices);
+						bi:=Maximum(indices);
+						AddEdge(~newgraph,shiftas[i]+pastingchoice[i][ai],shiftexc[i]+pastingchoice[i][bi]);
+					end for;
+				end for;
+				if newgraph notin graphs then
+					canG:=CanonicalGraph(newgraph);
+					if canG notin canonicallylabeled then
+						Append(~graphs,newgraph);
+						Append(~canonicallylabeled,canG);
+					end if;
+				end if;
+			end for;
+		end for;
+	end for;
+	return graphs;
+end function;
+
+/*
+Inputs:
+1) a sequence "bipartiteparts" of sequences of sequences of graphs,
+2) a sequence "as" of integers,
+3) a sequence "peas" of sequences of numbers of some field N.
+The three inputs must all have the same length, and for all indices i<j, for all graphs G in
+bipartiteparts[j][i] we must have:
+i) G is a connected bipartite graph on as[i]+as[j] vertices,
+ii) The first as[i] vertices of G form an independent set,
+iii) The last as[j] vertices of G form an independent set,
+iv) peas[i] is of length as[i],
+v) peas[i] cat peas[j] is a Perron eigenvector of G.
+Output:
+a set or sequence of all the possible ways to compose the bipartite parts
+
+There are some additional parameters:
+1) In case you want to check Hoffman colorability along the way, then set "hoffman" to the minimal
+	polynomial of the largest eigenvalues of the bipartite parts.
+2) In case you want the polynomial ring over a real field of a non-default precision, use "R",
+3) In case you want the precision for Newton's method to be different from 10, use "prec"
+*/
+Compose := function(bipartiteparts,as,peas : hoffman:=Zero(PolynomialRing(Integers())),R:=PolynomialRing(RealField()),prec:=10)
+	chi:=#as;
+	if chi eq 2 then
+		return bipartiteparts[2][1];
+	end if;
+	templates:=$$(Prune(bipartiteparts),Prune(as),Prune(peas));
+	p:=ComposeInductiveStep(templates,bipartiteparts[chi],Prune(as),as[chi],Prune(peas),peas[chi]);
+	if hoffman eq Zero(PolynomialRing(Integers())) then
+		return p;
+	end if;
+	hoffmancolorables:=[];
+	for G in p do
+		phi:=CharacteristicPolynomial(G);
+		adjustedphi:=Evaluate(SF(phi),-Parent(phi).1);
+		w:=WhichFactorHasLargestRoot(adjustedphi,[hoffman],&+as,R,prec);
+		if w eq hoffman then
+			Append(~hoffmancolorables,G);
+		end if;
+	end for;
+	return hoffmancolorables;
+end function;

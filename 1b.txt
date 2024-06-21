@@ -1,0 +1,134 @@
+/*
+The goal of the functions in this file is to create a library of bipartite graphs, sorted according to
+the largest eigenvalue. The structure of the library lib is as follows:
+
+For positive integers d, lib[d] will be a list with two elements. lib[d][1] will be a list of irreducible
+polynomials with integer coefficients of degree d, and lib[d][2][i][b][a] will be a sequence of
+two-element lists [*G, conn*], where G is a bipartite graph with largest eigenvalue a root of
+lib[d][1][i], where conn is a Boolean variable telling if G is connected or not. We note the
+following:
+1) a should be at most b.
+2) If G is connected, then the vertices of G will be ordered in such a way that 1,...,a is the first
+	bipartite class, and a+1,...,a+b comprises the second bipartite class. If the graph is
+	disconnected, then G does not have a particular vertex order, but still it should have
+	bipartition into classes of sizes a and b to be sorted in lib[d][2][i][b][a].
+3) We intend to sort all bipartite graphs with bipartite class sizes [a,b] an element of a
+	prespecified set of allowed pairs (which will be the first input), except
+	bipartite graphs that have no positive eigenvector, and except connected bipartite graphs
+	such that lib[d][1][i] is an even polynomial.
+4) In case a=b, if G is connected and there exists no automorphism of G flipping the two color classes,
+	we will put G twice in the library, once with one class first, and the other time with the
+	other class first.
+*/
+
+// Adds [*G,conn*] to the library lib as described above. k is the maximum size of the bipartite
+// graphs considered. "class" here should be empty if G is disconnected.
+procedure AddToLibrary(~lib,G,class,f,a,b,k)
+	if #class eq 0 then
+		conn:=false;
+		Gordered:=G;
+	else
+		conn:=true;
+		classindices:={Index(v): v in class};
+		neworderinverse:=Setseq(classindices) cat Setseq({1..(a+b)} diff classindices);
+		Gordered:=NewOrder(G,[Index(neworderinverse,i): i in [1..(a+b)]]);
+	end if;
+	d:=Degree(f);
+	if not IsDefined(lib,d) then
+		lib[d]:=[*[],[]*];
+		for dd:=1 to d-1 do
+			if not IsDefined(lib,dd) then
+				lib[dd]:=[*[],[]*];
+			end if;
+		end for;
+	end if;
+	if f notin lib[d][1] then
+		Append(~lib[d][1],f);
+		Append(~lib[d][2],[]);
+		i:=#lib[d][1];
+		lib[d][2][i]:=[[[]: aa in [1..Minimum(bb,k-bb)]]: bb in [1..k-1]];
+	else
+		i:=Index(lib[d][1],f);
+	end if;
+	Include(~lib[d][2][i][b][a],[*Gordered,conn*]);
+end procedure;
+
+/*
+Creates the library.
+As inputs we take a set "pairs" of pairs of integers, a set "graphsizes" of graph sizes
+considered, a sequence "graphs" of bipartite parts generated previously, and a polynomial
+ring over a real field "R" and a precision "prec" for Newton's method.
+Only the graphs with size in "graphsizes" and bipartition sizes in "pairs" are included.
+Also we require the bipartite parts to have a positive eigenvector.
+*/
+LibraryOfBipartiteEigenvalues := function(pairs,graphsizes,graphs,R,prec)
+	k:=Maximum(graphsizes);
+	lib:=[];
+	for n in graphsizes do
+		for G in graphs[n] do
+			components:=Components(G);
+			C:=#components;
+			if C gt 1 then
+				bipsiz:={a: a in BipartitionSizes(G,components) | [a,n-a] in pairs};
+				if #bipsiz gt 0 then
+					poseig,f:= HasPositiveEigenvector(G,n,components,R,prec);
+					if poseig then
+						for a in bipsiz do
+							AddToLibrary(~lib,G,{},f,a,n-a,k);
+						end for;
+					end if;
+				end if;
+			else
+				fc,sc:=Bipartition(G);
+				a:=#fc;
+				b:=#sc;
+				if [a,b] in pairs then
+					f:=AlgebraicGreatestEigenvalue(G,n,R,prec);
+					if Evaluate(f,-Parent(f).1) ne f then
+						AddToLibrary(~lib,G,fc,f,a,b,k);
+						if a eq b then
+							if not BipartiteClassesAreSymmetric(G,fc) then
+								AddToLibrary(~lib,G,sc,f,a,b,k);
+							end if;
+						end if;
+					end if;
+				end if;
+			end if;
+		end for;
+	end for;
+	return lib;
+end function;
+
+/*
+The following function, given the library of bipartite eigenvalues "lib" as input, and "presentsizes" the
+set of integers, such that all graphs in the library have both bipartite class sizes in "presentsizes".
+
+We want to record which pairs (a,b) have graphs present in the library, in a graph and a set.
+Output:
+library "slib" that has slib[d][i] a list [*s,G*] for every d<=#lib and i<=#lib[d][i]. Here
+s is the set of integers a such that lib[d][2][i][a][a] is nonempty, and G is the graph on vertices
+{1..k-1} such that a is connected to b (for a=/=b) if and only if lib[2][i][b][a] is nonempty.
+
+*/
+
+SizesLibrary:= function(lib,presentsizes);
+	slib:=[];
+	for d:=1 to #lib do
+		slib[d]:=[];
+		for i:=1 to #lib[d][1] do
+			bs:=lib[d][2][i];
+			s:={Integers()| a : a in presentsizes | IsDefined(bs[a],a) and #bs[a][a] ne 0};
+			nbs:=[{Integers()|}: b in [1..Maximum(presentsizes)]];
+			for b in presentsizes do
+				for a in presentsizes do
+					if IsDefined(bs[b],a) and #bs[b][a] ne 0 then
+						Include(~nbs[b],a);
+					end if;
+				end for;
+			end for;
+			G:=Graph<Maximum(presentsizes)| nbs>;
+			Append(~slib[d],[*s,G*]);
+		end for;
+	end for;
+	return slib;
+end function;

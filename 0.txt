@@ -1,0 +1,420 @@
+/*
+This file contains all the preliminary functions that are needed in the algorithm that are not
+already included in Magma. It is subdivided into sections with titles in capital letters.
+*/
+
+
+// NEWTON'S METHOD
+
+// Returns the squarefree version of a polynomial. Squarefree polynomials work best for newton's method.
+SF := function(f)
+	g:=GCD(Derivative(f),f);
+	return f div g;
+end function;
+
+// Returns the simple part of a polynomial, that is the product of the factors (x-s) such that s is
+// a simple complex root of f.
+SimplePart := function(f);
+	g:=GCD(Derivative(f),f);
+	sf:=f div g;
+	return sf div GCD(g,sf);
+end function;
+
+// Given all roots of f are real and bounded by "bound", and R is a polynomial ring over a real field of
+// precision at least "prec". Returns a real number at most 10^-prec greater than the largest root of f.
+FindLargestRoot := function(f,bound,R,prec)
+	real_f:=R ! f;
+	derivative:=Derivative(real_f);
+	difnc:=1;
+	x:=bound;
+	while difnc gt 10^(-prec) do
+		difnc:=Evaluate(real_f,x)/Evaluate(derivative,x);
+		x-:=difnc;
+	end while;
+	return x;
+end function;
+
+// Given a sequence of factors given as additional input, this function returns the first factor that
+// shares f's largest root. If no such factors are given, it returns the zero function.
+WhichFactorHasLargestRoot := function(f,factors,bound,R,prec)
+	labda_max:=FindLargestRoot(f,bound,R,prec);
+	for g in factors do
+		real_g:=R ! g;
+		difncg:=Evaluate(real_g,labda_max)/Evaluate(Derivative(real_g),labda_max);
+		if difncg lt 10^(-prec) then
+			return g;
+		end if;
+	end for;
+	return R ! 0;
+end function;
+
+
+// GREATEST/PERRON EIGENVALUES AND POSITIVE/PERRON EIGENVECTORS.
+
+// Given a connected graph G with at most n vertices, and a real polynomial field R and a precision prec,
+// this function returns the minimal polynomial of the Perron eigenvalue of G.
+// It works through factorizing the characteristic polynomial and applying Newton's method.
+AlgebraicGreatestEigenvalue := function(G,n,R,prec)
+	f:=SimplePart(CharacteristicPolynomial(G));
+	factors:=[v[1] : v in Factorization(f)];
+	return WhichFactorHasLargestRoot(f,factors,n,R,prec);
+end function;
+
+// Given a connected graph G on n vertices, and lambda as Perron eigenvalue, as the generator of a
+// number field N=Q(lambda), this function returns a Perron eigenvector of G over N.
+PerronEigenvector := function(G,n,lambda)
+	return Basis(NullSpace(AdjacencyMatrix(G)-ScalarMatrix(n,lambda)))[1];
+end function;
+
+
+// The following function returns "true, f" if G has a positive eigenvector, where f is the minimal
+// polynomial of the corresponding eigenvalue. It returns "false, 0" if not. "components" should
+// be the output of the Components function applied to G.
+HasPositiveEigenvector := function(G,n,components,R,prec)
+	f:=AlgebraicGreatestEigenvalue(sub<G|components[1]>,n,R,prec);
+	for i:=2 to #components do
+		component:=components[i];
+		if AlgebraicGreatestEigenvalue(sub<G|component>,n,R,prec) ne f then
+			return false,0;
+		end if;
+	end for;
+	return true, f;
+end function;
+
+
+// BIPARTITIONS
+
+// Given a connected bipartite graph, this function precisely gives the two bipartition classes.
+Bipartition := function(G)
+	distance_partition:=DistancePartition(VertexSet(G).1);
+	diam:=#distance_partition;
+	firstclass:=&join [distance_partition[i]: i in [1..diam] | IsOdd(i)];
+	secondclass:=&join [distance_partition[i]: i in [1..diam] | IsEven(i)];
+	if #firstclass le #secondclass then
+		return firstclass,secondclass;
+	end if;
+	return secondclass,firstclass;
+end function;
+
+// Given a vertex v of some disconnected bipartite graph, this function gives the two bipartition classes
+// of the component containing v.
+BipartitionDisconnected := function(v)
+	distance_partition:=DistancePartition(v);
+	diam:=#distance_partition-1;
+	firstclass:=&join [distance_partition[i]: i in [1..diam] | IsOdd(i)];
+	secondclass:=&join [distance_partition[i]: i in [1..diam] | IsEven(i)];
+	return firstclass, secondclass;
+end function;
+
+// Given a disconnected graph G, compute the set containing the smallest class size for every possible
+// bipartition (of which there are 2^#components).
+BipartitionSizes := function(G,components)
+	bipsiz:={};
+	C:=#components;
+	sizes:=[];
+	for component in components do
+		fc,sc:=Bipartition(sub<G|component>);
+		Append(~sizes,[#fc,#sc]);
+	end for;
+	for s in Subsets({2..C}) do
+		fcsize:=sizes[1][1];
+		scsize:=sizes[1][2];
+		fcsize+:= &+[Integers() | sizes[i][1]: i in [2..C] | i notin s];
+		fcsize+:= &+[Integers() | sizes[i][2]: i in s];
+		scsize+:= &+[Integers() | sizes[i][2]: i in [2..C] | i notin s];
+		scsize+:= &+[Integers() | sizes[i][1]: i in s];
+		if fcsize le scsize then
+			Include(~bipsiz,fcsize);
+		else
+			Include(~bipsiz,scsize);
+		end if;
+	end for;
+	return bipsiz;
+end function;
+
+// Given a connected bipartite graph G with bipartite class fc containing exactly half the vertices of
+// G, returns true if there exists an automorphism of G flipping the bipartition classes and false
+// otherwise.
+BipartiteClassesAreSymmetric := function(G,fc)
+	o:={VertexSet(G).j: j in Rep(Orbits(AutomorphismGroup(G)))};
+	if o subset fc then
+		return false;
+	elif #(o meet fc) eq 0 then
+		return false;
+	else
+		return true;
+	end if;
+end function;
+
+
+// MULTISETS AND PERMUTING SEQUENCES
+
+/*
+Inputs:
+v1 and v2, sequences of the same length over the same field not containing zeroes.
+Output:
+if there exists a scalar lambda such that, as multisets, v1 and lambda*v2 are the same, then
+return lambda and lambda*v2. Otherwise return 0 and v2.
+*/
+AreCompatible := function(v1,v2)
+	rep2:=v2[1];
+	possible_lambda:={entry1/rep2 : entry1 in v1};
+	for lambda in possible_lambda do
+		scaledv2:=[lambda*entry2 : entry2 in v2];
+		if Multiset(v1) eq Multiset(scaledv2) then
+			return lambda, scaledv2;
+		end if;
+	end for;
+	return 0, v2;
+end function;
+
+/*
+Inputs:
+v1 and v2, two sequences not containing 0 that are equal as multisets.
+Output:
+a permutation perm such that v2[i]=v1[perm[i]] for all i.
+*/
+FindPermutation := function(v1,v2)
+	n:=#v2;
+	copy:=v1;
+	perm:=[0: i in [1..n]];
+	for i:=1 to n do
+		perm[i]:=Index(copy,v2[i]);
+		copy[perm[i]]:=0;
+	end for;
+	return perm;
+end function;
+
+/*
+Input: a sequence pe.
+Output: a sequence containing the permutations of pe that don't change pe.
+*/
+FixingPermutations := function(pe)
+	values:=Setseq(Seqset(pe));
+	indices:=[[]: v in values];
+	for i:=1 to #pe do
+		Append(~indices[Index(values,pe[i])],i);
+	end for;
+	permscartprod:=CartesianProduct([Permutations(Seqset(indic)): indic in indices]);
+	fixingperms:=[];
+	for pcp in permscartprod do
+		perm:=[];
+		for i:=1 to #indices do
+			for j:=1 to #indices[i] do
+				perm[indices[i][j]]:=pcp[i][j];
+			end for;
+		end for;
+		Append(~fixingperms,perm);
+	end for;
+	return fixingperms;
+end function;
+
+/*
+Input: a sequence pe.
+Output: the group of permutations that don't change pe.
+*/
+FixingPermutationGroup := function(pe)
+	values:=Setseq(Seqset(pe));
+	indices:=[[]: v in values];
+	for i:=1 to #pe do
+		Append(~indices[Index(values,pe[i])],i);
+	end for;
+	P:=Sym(#pe);
+	gens:=[];
+	for s in indices do
+		slen:=#s;
+		if slen gt 1 then
+			spruned:=Prune(s);
+			slast:=s[slen];
+			for sel in spruned do
+				Append(~gens,P ! (sel,slast));
+			end for;
+		end if;
+	end for;
+	return sub<P|gens>;
+end function;
+
+// The following function has as input a graph G and an n-permutation perm as a sequence.
+// It outputs a new graph H such that i |-> perm[i] is an isomorphism from G to H.
+NewOrder := function(G,perm)
+	return Graph<#perm|{{perm[Index(v)]: v in EndVertices(e)} : e in Edges(G)}>;
+end function;
+
+
+// OTHER
+
+/*
+We use the function Partitions(n,chi) to find all integer partitions of n into chi parts.
+Given such a partition, we need the set of duplicates.
+
+The following function has as input a sequence, and gives two outputs: the set of elements that
+occur at least twice in the sequence, and the set of elements of the sequence.
+*/
+
+SetOfDuplicates := function(sequence)
+	s:=Seqset(sequence);
+	m:=Multiset(sequence);
+	return Set(m diff Multiset(s)),s;
+end function;
+
+// Given a graph G and a set of indices I, returns true if I gives a clique and false otherwise
+IsClique := function(G,I);
+	U:={VertexSet(G).i : i in I};
+	if IsComplete(sub<G|U>) then
+		return true;
+	end if;
+	return false;
+end function;
+
+// Given a graph G, return the graph obtained by adding an additional vertex to the end of G and connecting
+// to every vertex already present in G, also known as the cone graph over G.
+
+ConeGraph := function(G)
+	return Complement(Complement(G)+1);
+end function;
+
+// Given natural numbers n and chi, compute if they are viable for a Hoffman colorable cone graph.
+// We need that (n-1)/(chi-1) is a square integer. If this is the case, "nu" such that nu^2(chi-1)=n-1
+// is returned, otherwise 0 is returned.
+IsConeViable := function(n,chi)
+	nunu,r:=Quotrem(n-1,chi-1);
+	if r ne 0 then
+		return 0;
+	end if;
+	issquare,nu:=IsSquare(nunu);
+	if not issquare then
+		return 0;
+	end if;
+	return nu;
+end function;
+
+/*
+Inputs:
+1) A sequence of partition "partns",
+2) A natural number "chi" such that the above partitions are into chi parts.
+Output:
+the set of pairs [a,b] such that there is some partition in partns that contains a and b. We include
+[a,a] only if some partition has a twice.
+*/
+PairsFromPartitions:= function(partns,chi)
+	pairs:={};
+	for partn in partns do
+		for i:=1 to chi-1 do
+			for j:=i+1 to chi do
+				Include(~pairs,[partn[j],partn[i]]);
+			end for;
+		end for;
+	end for;
+	return pairs;
+end function;
+
+/*
+Inputs:
+1) A bipartite graph G,
+2) An integer cl such that 0<cl<#G, and the first cl vertices of G form one bipartie class
+	and the last #G-cl vertices form the other bipartite class.
+Output:
+The group of automorphisms sending vertices with index at most cl to vertices
+with index at most cl and vertices with index greater than cl to vertices with
+indices greater than cl.
+If G is connected this group is a normal subgroup of the automorphism
+group, so it is constructed as a kernel. If G is disconnected then we create the subgroup
+generated by all automorphisms fixing fc.
+*/
+FixingAutomorphismGroup := function(G,cl)
+	A:=AutomorphismGroup(G);
+	if IsConnected(G) then
+		B:=CyclicGroup(2);
+		images:=[];
+		for a in GeneratorsSequence(A) do
+			ae:=Eltseq(a);
+			if ae[1] le cl then
+				Append(~images,Id(B));
+			else
+				Append(~images,B.1);
+			end if;
+		end for;
+		h:=hom<A->B | images>;
+		return Kernel(h);
+	else
+		fixingautomorphisms:=[];
+		for a in A do
+			ae:=Eltseq(a);
+			if &and [ae[i] le cl : i in [1..cl]] then
+				Append(~fixingautomorphisms,a);
+			end if;
+		end for;
+		return sub<A|fixingautomorphisms>;
+	end if;
+end function;
+
+/*
+This function returns the sequence of bipartite graphs of size n with no isolated vertices
+using the SmallGraphDatabase. For the same function using GenerateGraphs see a
+different file.
+*/
+ViableBipartiteGraphs := function(n)
+	graphs:=[];
+	DB:=SmallGraphDatabase(n:IncludeDisconnected:=true);
+	for i:=1 to #DB do
+		G:=Graph(DB,i);
+		if MinimumDegree(G) gt 0 and IsBipartite(G) then
+			Append(~graphs,G);
+		end if;
+	end for;
+	return graphs;
+end function;
+
+// Do the above function except for multiple n at the same time.
+ViableBipartiteGraphsMultiple := function(graphsizes)
+	graphs:=[];
+	for n in graphsizes do
+		graphs[n]:=ViableBipartiteGraphs(n);
+	end for;
+	return graphs;
+end function;
+
+/*
+Inputs:
+1) a class size "m",
+2) a valency "nu",
+3) a sequence of bipartite parts "bps".
+Output:
+A sequence containing those graphs from bps that are regular of valency nu
+and have 2m vertices. The vertices are put in an order that the first m vertices
+form an independent set and the last m vertices form an independent set. If there
+are multiple ways to do this (due to the graph being asymmetric), all of these ways
+are included.
+*/
+PickAndReorderRegularOnes := function(m,nu,bps)
+	bipartiteparts:=[];
+	for G in bps do
+		if IsRegular(G) and Degree(VertexSet(G).1) eq nu then
+			components:=Components(G);
+			asymmetriccomponents:={Integers()|};
+			bipartition:=[];
+			for i:=1 to #components do
+				component:=components[i];
+				Append(~bipartition,BipartitionDisconnected(Rep(component)));
+				H:=sub<G|component>;
+				if not BipartiteClassesAreSymmetric(H,Bipartition(H)) then
+					Include(~asymmetriccomponents,i);
+				end if;
+			end for;
+			possiblefirstclasses:=[];
+			for s in Subsets(asymmetriccomponents) do
+				fc:={Integers()|};
+				for j in s do
+					fc join:= {Index(v) : v in components[j] | v notin bipartition[j]};
+				end for;
+				for j in {1..#components} diff s do
+					fc join:= {Index(v) : v in bipartition[j]};
+				end for;
+				neworderinverse := Setseq(fc) cat Setseq({1..2*m} diff fc);
+				Append(~bipartiteparts,NewOrder(G,[Index(neworderinverse,j): j in [1..(2*m)]]));
+			end for;
+		end if;
+	end for;
+	return bipartiteparts;
+end function;
+

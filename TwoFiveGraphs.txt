@@ -1,0 +1,69 @@
+/*
+Given n and chi such that 2chi <= n <= 5chi and n-2chi is a multiple of 3,
+the functions in this file compute all Hoffman colorable graphs with least eigenvalue
+-2 and color classes of size 2 or 5.
+Additionally, as an exceptional case, if n=6 and chi=3, we also return the exceptional
+graph from the classification of Hoffman colorable graphs with at least two color classes
+of size two.
+We use the compose function from the fourth step. We have however no work in computing
+bipartite parts as we already know them.
+
+The next function checks the numerical conditions, returning the number of classes of
+size 5 if the conditions are met, and -1 if the conditions are not met.
+*/
+
+HowManyFive := function(n,chi)
+	q,r:=Quotrem(n-2*chi,3);
+	if r ne 0 then
+		return -1;
+	elif q gt chi then
+		return -1;
+	else
+		return q;
+	end if;
+end function;
+
+AllTwoFiveGraphs := function(n,chi : R:=PolynomialRing(RealField()),prec:=10)
+	chi5:=HowManyFive(n,chi);
+	if chi5 eq 0 then
+		rcmgc:=CompleteGraph(2);
+		for i:=2 to chi do
+			rcmgc:=Union(rcmgc,CompleteGraph(2));
+		end for;
+		graphs:=[Complement(rcmgc)];
+		if n eq 6 then
+			Append(~graphs,Graph<6|{1,3},{1,4},{1,5},{1,6},{2,3},{2,5},{3,5},{3,6},{4,5}>);
+		end if;
+		return graphs;
+	elif chi5 eq -1 then
+		return [];
+	end if;
+	chi2:=chi-chi5;
+	parts22:=[Graph<4|{1,3},{1,4},{2,3},{2,4}>];
+	parts25:=[Graph<7|{1,3},{1,4},{1,5},{2,3},{2,6},{2,7}>];
+	parts55:=[Graph<10|{1,6},{1,7},{1,8},{2,6},{3,6},{4,9},{4,10},{5,9},{5,10}>,
+		Graph<10|{1,7},{1,8},{1,9},{1,10},{2,6},{3,6},{4,6},{5,6}>];
+	pe2:=[2,2];
+	pe5:=[2,1,1,1,1];
+	sizes:=[2 : i in [1..chi2]] cat [5 : i in [1..chi5]];
+	pes:=[pe2 : i in [1..chi2]] cat [pe5 : i in [1..chi5]];	
+	bipartiteparts:=[];
+	for j:=2 to chi do
+		bipartiteparts[j]:=[];
+		for i:=1 to j-1 do
+			if i gt chi2 then
+				bipartiteparts[j][i]:=parts55;
+			else
+				if j gt chi2 then
+					bipartiteparts[j][i]:=parts25;
+				else
+					bipartiteparts[j][i]:=parts22;
+				end if;
+			end if;
+		end for;
+	end for;
+	P<x>:=PolynomialRing(Integers());
+	f:=x-2;
+	return Compose(bipartiteparts,sizes,pes : hoffman:=f, R:=R,prec:=prec);
+end function;
+	

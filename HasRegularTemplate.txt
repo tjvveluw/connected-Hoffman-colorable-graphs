@@ -1,0 +1,32 @@
+HasRegularTemplate := function(G)
+	if IsRegular(G) then
+		return true;
+	end if;
+	Gc:=Complement(G);
+	n:=NumberOfVertices(G);
+	kmin:=2;
+	stillindep:=true;
+	while stillindep do
+		if IsClique(Gc,{1 .. kmin}) then
+			kmin+:=1;
+		else
+			stillindep:=false;
+		end if;
+	end while;
+	kmax:=n-1;
+	stillindep:=true;
+	while stillindep do
+		if IsClique(Gc,{kmax .. n}) then
+			kmax-:=1;
+		else
+			stillindep:=false;
+		end if;
+	end while;
+	if IsRegular(sub<G|{VertexSet(G).i : i in [kmin .. n]}>) then
+		return true;
+	elif IsRegular(sub<G|{VertexSet(G).i : i in [1..kmax]}>) then
+		return true;
+	else
+		return false;
+	end if;
+end function;

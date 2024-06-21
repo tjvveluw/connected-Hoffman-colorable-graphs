@@ -1,0 +1,51 @@
+/*
+Inputs:
+1) a sequence of partitions "partns",
+2) a set of to be excluded pairs "tbexcpairs".
+Outputs:
+1) The subsequence of "partns" containing all partitions that contain at least one to be excluded pair,
+2) The subsequence of "partns" of partitions that do not contain any to be excluded pairs.
+*/
+
+DefectivePartitions := function(partns,tbexcpairs)
+	possiblyok:=partns;
+	definitelynotok:=[];
+	for tbep in tbexcpairs do
+		a:=tbep[1];
+		b:=tbep[2];
+		copy:=possiblyok;
+		for partn in copy do
+			if a in partn then
+				if b in Exclude(partn,a) then
+					Append(~definitelynotok,partn);
+					Exclude(~possiblyok,partn);
+				end if;
+			end if;
+		end for;
+	end for;
+	return definitelynotok, possiblyok;
+end function;
+
+/*
+The following two functions will be used to split off the disconnected cases and proceed the computation
+with the connected cases.
+
+We use the above function however on two different sets of pairs to be excluded. For the first function
+we exclude partitions with a subpair for which every graph is disconnected (the remaining graphs will be fed
+into the following step).
+The second function excludes partition for which some pair has some disconnected graph, to take aside
+for human intervention.
+
+A partition might come out of both function, however it is impossible for a partition to not be picked
+up by either function.
+*/
+
+ConnectedCases := function(partns,pairs_univ_disc)
+	no,yes:=DefectivePartitions(partns,pairs_univ_disc);
+	return yes;
+end function;
+
+DisconnectedCases := function(partns,pairs_exist_disc)
+	no,yes:=DefectivePartitions(partns,pairs_exist_disc);
+	return no;
+end function;

@@ -1,0 +1,32 @@
+/*
+The idea of the following function is that this decides given an irreducible polynomial f (providing s
+and G, wihch record for which pairs (a,b) there exists a bipartite graph for the eigenvalue of f) and
+a partition "partn", if there exists for every pair of distinct entries (a,b) from the
+partition a bipartite graph with class sizes a and b and largest eigenvalue root of f.
+*/
+PartitionSizesArePresent := function(s,G,partn)
+	dup,se:=SetOfDuplicates(partn);
+	if dup subset s and IsClique(G,se) then
+		return true;
+	end if;
+	return false;
+end function;
+
+/*
+Inputs:
+1) a sequence of integer partitions partns;
+2) a booskhelf, which is intended to be lib[d][2][i] for some indices d and i.
+3) a sizesbookshelf, which is intended to be slib[d][i] for the same indices.
+4) chi, the number of parts in the partition
+Output:
+The subsequence of partitions of partns that are completely present in the bookshelf.
+*/
+PartitionsToConsider := function(partns,bookshelf,sizesbookshelf,chi)
+	presentpartns:=[];
+	for partn in partns do
+		if PartitionSizesArePresent(sizesbookshelf[1],sizesbookshelf[2],partn) then
+			Append(~presentpartns,partn);
+		end if;
+	end for;
+	return presentpartns;
+end function;

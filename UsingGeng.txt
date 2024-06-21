@@ -1,0 +1,49 @@
+/*
+These two functions does the same as ViableBipartiteParts(Multiple), but uses
+nauty's geng instead.
+*/
+ViableBipartiteGraphsGeng := function(n)
+	graphs:=[];
+	I:=GenerateGraphs(n:Bipartite:=true, MinDeg:=1);
+	notempty,G:=NextGraph(I);
+	while notempty do
+		Append(~graphs,G);
+		notempty,G:=NextGraph(I);
+	end while;
+	return graphs;
+end function;
+
+ViableBipartiteGraphsGengMultiple := function(graphsizes)
+	graphs:=[];
+	for n in graphsizes do
+		graphs[n]:=ViableBipartiteGraphsGeng(n);
+	end for;
+	return graphs;
+end function;
+
+load "AllHoffmanColorables.txt";
+
+/*
+This function does the same as AllHoffmanColorables but instead uses the above
+two functions.
+*/
+
+AllHoffmanColorablesGeng := function(n,chi : R:=PolynomialRing(RealField()), prec:=10)
+	t1:=Cputime();
+	viabpartns:=ViablePartitions(n,chi);
+	viabpairs:=PairsFromPartitions(viabpartns,chi);
+	grsz:={p[1]+p[2]: p in viabpairs};
+	viabgs:=ViableBipartiteGraphsGengMultiple(grsz);
+	t2:=Cputime();
+	nu:=IsConeViable(n,chi);
+	hc:=[];
+	if nu gt 0 then
+		m:=nu^2;
+		viabrps:=PickAndReorderRegularOnes(m,nu,ViableBipartiteGraphsGeng(2*m));
+		hc:=[ConeGraph(G): G in AllRegularHoffmanColorablesGivenParts(n-1,chi-1,m,nu,viabrps)];
+	end if;
+	tcones:=Cputime(t2);
+	hcmore,disc,ttf,tlbeval,tcompose:=AllHoffmanColorablesGivenPartitionsAndParts(n,chi,viabpartns,viabpairs,grsz,viabgs : R:=R, prec:=prec);
+	return hc cat hcmore, disc, t2-t1,tcones, ttf, tlbeval, tcompose;
+end function;
+	
